@@ -313,7 +313,29 @@ export function solveMechanism(
   // === Try four-bar linkage ===
   const fourBar = detectFourBar(scene)
   if (fourBar) {
-    const result = solveFourBar(fourBar.config, driverAngleDeg)
+    // Beregn prevTheta4 fra coupler body's nuværende position
+    // (bruges til at vælge korrekt konfiguration — open vs crossed)
+    const couplerBody = fourBar.couplerBody
+    const outputJoint = scene.joints.find(
+      (j) =>
+        j.id !== fourBar.driverJoint.id &&
+        j.id !== fourBar.couplerJoint.id &&
+        (j.bodyAId === couplerBody.id || j.bodyBId === couplerBody.id)
+    )
+    let prevTheta4: number | undefined
+    if (outputJoint) {
+      const outputAnchorLocal =
+        outputJoint.bodyAId === couplerBody.id ? outputJoint.anchorOnA : outputJoint.anchorOnB
+      const outputAnchorWorld = bodyLocalToWorld(outputAnchorLocal, couplerBody)
+      prevTheta4 = radToDeg(
+        Math.atan2(
+          outputAnchorWorld.y - fourBar.config.groundB.y,
+          outputAnchorWorld.x - fourBar.config.groundB.x,
+        )
+      ) - radToDeg(fourBar.config.groundAngle)
+    }
+
+    const result = solveFourBar(fourBar.config, driverAngleDeg, prevTheta4)
     if (result) {
       // Opdater input body
       const driverAnchorLocal = driverJoint.anchorOnB
@@ -327,9 +349,7 @@ export function solveMechanism(
       })
 
       // Opdater coupler body
-      // Coupler body position baseret på P2 og P3
       const couplerJoint = fourBar.couplerJoint
-      const couplerBody = fourBar.couplerBody
       const couplerAnchorLocal =
         couplerJoint.bodyAId === couplerBody.id ? couplerJoint.anchorOnA : couplerJoint.anchorOnB
 
