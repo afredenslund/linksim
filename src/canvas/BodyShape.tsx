@@ -9,8 +9,10 @@ interface BodyShapeProps {
   camera: Camera
   isSelected: boolean
   snapEnabled: boolean
+  isInMechanism: boolean
   onSelect: (id: string) => void
   onDragEnd: (id: string, newX: number, newY: number) => void
+  onDragStart?: (id: string) => boolean // return true if mechanism drag
 }
 
 export default function BodyShape({
@@ -18,10 +20,13 @@ export default function BodyShape({
   camera,
   isSelected,
   snapEnabled,
+  isInMechanism,
   onSelect,
   onDragEnd,
+  onDragStart,
 }: BodyShapeProps) {
   const groupRef = useRef<ReturnType<typeof Group> | null>(null)
+  const isMechanismDragRef = useRef(false)
 
   // Beregn screen-koordinater for polygon
   const worldVerts = getWorldVertices(body)
@@ -45,25 +50,35 @@ export default function BodyShape({
   const handleDragStart = useCallback(
     (e: KonvaEventObject<DragEvent>) => {
       e.cancelBubble = true
+      if (onDragStart) {
+        isMechanismDragRef.current = onDragStart(body.id)
+        if (isMechanismDragRef.current) {
+          // Prevent Konva drag — vi håndterer det via mousemove IK
+          e.target.stopDrag()
+        }
+      }
     },
-    []
+    [body.id, onDragStart]
   )
 
   const handleDragEnd = useCallback(
     (e: KonvaEventObject<DragEvent>) => {
+      if (isMechanismDragRef.current) {
+        isMechanismDragRef.current = false
+        e.target.x(0)
+        e.target.y(0)
+        return
+      }
+
       const node = e.target
-      // Konva giver os dx, dy i screen-pixels
       const dx = node.x()
       const dy = node.y()
-      // Reset node position (vi gemmer i world-koordinater)
       node.x(0)
       node.y(0)
 
-      // Konverter delta til world
       let newWorldX = body.x + dx / camera.scale
-      let newWorldY = body.y - dy / camera.scale // negér y
+      let newWorldY = body.y - dy / camera.scale
 
-      // Snap til grid
       if (snapEnabled && !e.evt.altKey) {
         const gridSize = getGridSize(camera.scale)
         newWorldX = snapToGrid(newWorldX, gridSize)
@@ -76,6 +91,15 @@ export default function BodyShape({
   )
 
   const fontSize = Math.max(10, Math.min(14, 12 / camera.scale * 2))
+
+  // Farve for mekanisme-bodies
+  const strokeColor = isSelected
+    ? '#4a9eff'
+    : isInMechanism
+    ? '#ff922b'
+    : body.isGround
+    ? '#888888'
+    : '#555555'
 
   return (
     <Group
@@ -92,8 +116,8 @@ export default function BodyShape({
         closed
         fill={body.color}
         opacity={body.opacity}
-        stroke={isSelected ? '#4a9eff' : body.isGround ? '#888888' : '#555555'}
-        strokeWidth={isSelected ? 2.5 : 1}
+        stroke={strokeColor}
+        strokeWidth={isSelected ? 2.5 : isInMechanism ? 1.5 : 1}
         hitStrokeWidth={10}
       />
 

@@ -1,13 +1,25 @@
 import { create } from 'zustand'
-import type { Scene, Body, Joint, TrailPoint, GroundAnchor, Camera } from '../types'
+import type { Scene, Body, Joint, TrailPoint, GroundAnchor, Camera, Vector2 } from '../types'
 import { generateId, createRectVertices } from '../engine/geometry'
 import { loadScene, saveScene } from './persistence'
+
+export type ToolType = 'select' | 'addRect' | 'addGround' | 'addJoint'
+
+interface JointCreationState {
+  step: 'selectBodyA' | 'selectPointA' | 'selectBodyB' | 'selectPointB'
+  bodyAId: string | null // null = ground
+  anchorOnA: Vector2 | null
+  bodyBId: string | null
+}
 
 interface SceneState {
   scene: Scene
   selectedBodyId: string | null
   selectedJointId: string | null
-  tool: 'select' | 'addRect' | 'addGround' | 'addJoint'
+  tool: ToolType
+
+  // Joint creation workflow
+  jointCreation: JointCreationState | null
 
   // Camera
   setCamera: (camera: Camera) => void
@@ -17,7 +29,7 @@ interface SceneState {
   selectJoint: (id: string | null) => void
 
   // Tool
-  setTool: (tool: SceneState['tool']) => void
+  setTool: (tool: ToolType) => void
 
   // Bodies
   addRectBody: (x: number, y: number, width: number, height: number) => void
@@ -28,6 +40,12 @@ interface SceneState {
   addJoint: (joint: Omit<Joint, 'id'>) => void
   updateJoint: (id: string, updates: Partial<Joint>) => void
   deleteJoint: (id: string) => void
+
+  // Joint creation workflow
+  startJointCreation: () => void
+  selectJointBodyA: (bodyId: string | null, anchor: Vector2) => void
+  selectJointBodyB: (bodyId: string, anchor: Vector2) => void
+  cancelJointCreation: () => void
 
   // Ground anchors
   addGroundAnchor: (x: number, y: number) => void
@@ -78,6 +96,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   selectedBodyId: null,
   selectedJointId: null,
   tool: 'select',
+  jointCreation: null,
 
   setCamera: (camera) => {
     set((state) => {
@@ -90,7 +109,13 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   selectBody: (id) => set({ selectedBodyId: id, selectedJointId: null }),
   selectJoint: (id) => set({ selectedJointId: id, selectedBodyId: null }),
 
-  setTool: (tool) => set({ tool }),
+  setTool: (tool) => {
+    if (tool === 'addJoint') {
+      set({ tool, jointCreation: { step: 'selectBodyA', bodyAId: null, anchorOnA: null, bodyBId: null } })
+    } else {
+      set({ tool, jointCreation: null })
+    }
+  },
 
   addRectBody: (x, y, width, height) => {
     const body: Body = {
@@ -123,7 +148,6 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const bodies = state.scene.bodies.map((b) => {
         if (b.id !== id) return b
         const updated = { ...b, ...updates }
-        // Genberegn vertices hvis width/height ændres
         if (updated.shapeType === 'rectangle' && (updates.width !== undefined || updates.height !== undefined)) {
           updated.vertices = createRectVertices(updated.width ?? 100, updated.height ?? 50)
         }
@@ -159,7 +183,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         joints: [...state.scene.joints, joint],
       }
       debouncedSave(newScene)
-      return { scene: newScene }
+      return { scene: newScene, selectedJointId: joint.id }
     })
   },
 
@@ -184,6 +208,49 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         selectedJointId: state.selectedJointId === id ? null : state.selectedJointId,
       }
     })
+  },
+
+  // === Joint creation workflow ===
+
+  startJointCreation: () => {
+    set({
+      tool: 'addJoint',
+      jointCreation: { step: 'selectBodyA', bodyAId: null, anchorOnA: null, bodyBId: null },
+    })
+  },
+
+  selectJointBodyA: (bodyId, anchor) => {
+    set((state) => ({
+      jointCreation: state.jointCreation
+        ? { ...state.jointCreation, step: 'selectBodyB' as const, bodyAId: bodyId, anchorOnA: anchor }
+        : null,
+    }))
+  },
+
+  selectJointBodyB: (bodyId, anchor) => {
+    const state = get()
+    const jc = state.jointCreation
+    if (!jc || !jc.anchorOnA) return
+
+    // Opret jointet
+    const joint: Omit<Joint, 'id'> = {
+      type: 'revolute',
+      bodyAId: jc.bodyAId,
+      bodyBId: bodyId,
+      anchorOnA: jc.anchorOnA,
+      anchorOnB: anchor,
+      isDriver: state.scene.joints.length === 0, // Første joint bliver driver
+      currentAngle: 0,
+      minAngle: -90,
+      maxAngle: 90,
+    }
+
+    get().addJoint(joint)
+    set({ tool: 'select', jointCreation: null })
+  },
+
+  cancelJointCreation: () => {
+    set({ tool: 'select', jointCreation: null })
   },
 
   addGroundAnchor: (x, y) => {
@@ -244,12 +311,12 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   resetScene: () => {
     const newScene = createDefaultScene()
     saveScene(newScene)
-    set({ scene: newScene, selectedBodyId: null, selectedJointId: null })
+    set({ scene: newScene, selectedBodyId: null, selectedJointId: null, jointCreation: null })
   },
 
   importScene: (scene) => {
     saveScene(scene)
-    set({ scene, selectedBodyId: null, selectedJointId: null })
+    set({ scene, selectedBodyId: null, selectedJointId: null, jointCreation: null })
   },
 
   exportScene: () => get().scene,

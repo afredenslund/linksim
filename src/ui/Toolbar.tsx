@@ -61,16 +61,23 @@ export default function Toolbar() {
       <button
         className={btnClass(tool === 'addRect')}
         onClick={() => setTool('addRect')}
-        title="Tilføj rektangel (R)"
+        title="Tilføj rektangel"
       >
         +Rekt
       </button>
       <button
         className={btnClass(tool === 'addGround')}
         onClick={() => setTool('addGround')}
-        title="Tilføj forankringspunkt (G)"
+        title="Tilføj forankringspunkt"
       >
         +Anker
+      </button>
+      <button
+        className={btnClass(tool === 'addJoint')}
+        onClick={() => setTool('addJoint')}
+        title="Tilføj led mellem to legemer"
+      >
+        +Led
       </button>
 
       {/* Separator */}

@@ -1,6 +1,7 @@
 import Toolbar from './ui/Toolbar'
 import Sidebar from './ui/Sidebar'
 import SceneCanvas from './canvas/SceneCanvas'
+import AnimationBar from './ui/AnimationBar'
 
 export default function App() {
   return (
@@ -10,6 +11,7 @@ export default function App() {
         <Sidebar />
         <SceneCanvas />
       </div>
+      <AnimationBar />
     </div>
   )
 }

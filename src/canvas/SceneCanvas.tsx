@@ -4,9 +4,11 @@ import type { KonvaEventObject } from 'konva/lib/Node'
 import type Konva from 'konva'
 import { useSceneStore } from '../store/sceneStore'
 import { screenToWorld, snapToGrid, getGridSize } from '../engine/geometry'
+import { solveMechanism, computeDriverAngleFromMouse, getJointWorldAnchorA } from '../engine/kinematics'
 import GridLayer from './GridLayer'
 import BodyShape from './BodyShape'
 import GroundAnchorMarker from './GroundAnchorMarker'
+import JointMarker from './JointMarker'
 
 export default function SceneCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -15,16 +17,24 @@ export default function SceneCanvas() {
   const isPanningRef = useRef(false)
   const lastPanPosRef = useRef({ x: 0, y: 0 })
   const spaceDownRef = useRef(false)
+  const isDraggingMechanismRef = useRef(false)
 
   const scene = useSceneStore((s) => s.scene)
   const selectedBodyId = useSceneStore((s) => s.selectedBodyId)
+  const selectedJointId = useSceneStore((s) => s.selectedJointId)
   const tool = useSceneStore((s) => s.tool)
+  const jointCreation = useSceneStore((s) => s.jointCreation)
   const setCamera = useSceneStore((s) => s.setCamera)
   const selectBody = useSceneStore((s) => s.selectBody)
+  const selectJoint = useSceneStore((s) => s.selectJoint)
   const addRectBody = useSceneStore((s) => s.addRectBody)
   const addGroundAnchor = useSceneStore((s) => s.addGroundAnchor)
   const updateBody = useSceneStore((s) => s.updateBody)
+  const updateJoint = useSceneStore((s) => s.updateJoint)
   const deleteBody = useSceneStore((s) => s.deleteBody)
+  const selectJointBodyA = useSceneStore((s) => s.selectJointBodyA)
+  const selectJointBodyB = useSceneStore((s) => s.selectJointBodyB)
+  const cancelJointCreation = useSceneStore((s) => s.cancelJointCreation)
 
   // Resize observer
   useEffect(() => {
@@ -54,12 +64,17 @@ export default function SceneCanvas() {
     }
   }, [dimensions.width, dimensions.height])
 
-  // Space key for pan
+  // Space key + Escape for cancel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()
         spaceDownRef.current = true
+      }
+      if (e.code === 'Escape') {
+        if (jointCreation) {
+          cancelJointCreation()
+        }
       }
       if (e.code === 'Delete' || e.code === 'Backspace') {
         const activeEl = document.activeElement
@@ -80,7 +95,7 @@ export default function SceneCanvas() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [selectedBodyId, deleteBody])
+  }, [selectedBodyId, deleteBody, jointCreation, cancelJointCreation])
 
   // Zoom med scroll
   const handleWheel = useCallback(
@@ -96,10 +111,8 @@ export default function SceneCanvas() {
       const zoomFactor = e.evt.deltaY > 0 ? 0.9 : 1.1
       const newScale = Math.max(0.2, Math.min(20, oldScale * zoomFactor))
 
-      // Zoom mod museposition
       const mouseWorldBefore = screenToWorld(pointer, scene.camera)
       const newCamera = { ...scene.camera, scale: newScale }
-      // Beregn ny pan så mouse-world forbliver under cursoren
       newCamera.x = pointer.x - mouseWorldBefore.x * newScale
       newCamera.y = pointer.y + mouseWorldBefore.y * newScale
 
@@ -108,7 +121,17 @@ export default function SceneCanvas() {
     [scene.camera, setCamera]
   )
 
-  // Pan med midterste museknap eller Space+drag
+  // Check om en body er del af en mekanisme med driver
+  const isBodyInMechanism = useCallback(
+    (bodyId: string): boolean => {
+      return scene.joints.some(
+        (j) => j.isDriver && (j.bodyAId === bodyId || j.bodyBId === bodyId)
+      )
+    },
+    [scene.joints]
+  )
+
+  // Pan og tool-handling
   const handleMouseDown = useCallback(
     (e: KonvaEventObject<MouseEvent>) => {
       // Midterste museknap eller Space+venstre
@@ -136,53 +159,160 @@ export default function SceneCanvas() {
           const snappedX = scene.snapToGrid ? snapToGrid(worldPos.x, gridSize) : worldPos.x
           const snappedY = scene.snapToGrid ? snapToGrid(worldPos.y, gridSize) : worldPos.y
           addGroundAnchor(snappedX, snappedY)
+        } else if (tool === 'addJoint' && jointCreation) {
+          // Joint creation: klik på ground
+          if (jointCreation.step === 'selectBodyA') {
+            const gridSize = getGridSize(scene.camera.scale)
+            const snappedX = scene.snapToGrid ? snapToGrid(worldPos.x, gridSize) : worldPos.x
+            const snappedY = scene.snapToGrid ? snapToGrid(worldPos.y, gridSize) : worldPos.y
+            selectJointBodyA(null, { x: snappedX, y: snappedY })
+          }
         } else {
           selectBody(null)
+          selectJoint(null)
         }
       }
     },
-    [tool, scene.camera, scene.snapToGrid, addRectBody, addGroundAnchor, selectBody]
+    [tool, jointCreation, scene.camera, scene.snapToGrid, addRectBody, addGroundAnchor, selectBody, selectJoint, selectJointBodyA]
   )
 
   const handleMouseMove = useCallback(
     (e: KonvaEventObject<MouseEvent>) => {
-      if (!isPanningRef.current) return
-      const dx = e.evt.clientX - lastPanPosRef.current.x
-      const dy = e.evt.clientY - lastPanPosRef.current.y
-      lastPanPosRef.current = { x: e.evt.clientX, y: e.evt.clientY }
+      if (isPanningRef.current) {
+        const dx = e.evt.clientX - lastPanPosRef.current.x
+        const dy = e.evt.clientY - lastPanPosRef.current.y
+        lastPanPosRef.current = { x: e.evt.clientX, y: e.evt.clientY }
+        setCamera({
+          ...scene.camera,
+          x: scene.camera.x + dx,
+          y: scene.camera.y + dy,
+        })
+        return
+      }
 
-      setCamera({
-        ...scene.camera,
-        x: scene.camera.x + dx,
-        y: scene.camera.y + dy,
-      })
+      // IK drag: når body trækkes i en mekanisme
+      if (isDraggingMechanismRef.current) {
+        const pointer = stageRef.current?.getPointerPosition()
+        if (!pointer) return
+
+        const mouseWorld = screenToWorld(pointer, scene.camera)
+        const driverJoint = scene.joints.find((j) => j.isDriver)
+        if (!driverJoint) return
+
+        const pivotWorld = getJointWorldAnchorA(driverJoint, scene)
+        const newAngle = computeDriverAngleFromMouse(mouseWorld, pivotWorld, driverJoint)
+
+        updateJoint(driverJoint.id, { currentAngle: newAngle })
+
+        const updatedScene = {
+          ...scene,
+          joints: scene.joints.map((j) =>
+            j.id === driverJoint.id ? { ...j, currentAngle: newAngle } : j
+          ),
+        }
+        const solution = solveMechanism(updatedScene, newAngle)
+
+        if (solution.valid) {
+          for (const bu of solution.bodyUpdates) {
+            updateBody(bu.id, { x: bu.x, y: bu.y, rotation: bu.rotation })
+          }
+        }
+      }
     },
-    [scene.camera, setCamera]
+    [scene, setCamera, updateJoint, updateBody]
   )
 
   const handleMouseUp = useCallback(() => {
     isPanningRef.current = false
+    isDraggingMechanismRef.current = false
   }, [])
+
+  // Body drag/click handler
+  const handleBodyClick = useCallback(
+    (id: string) => {
+      if (tool === 'addJoint' && jointCreation) {
+        const body = scene.bodies.find((b) => b.id === id)
+        if (!body) return
+
+        // Brug body center som anchor punkt
+        const anchor = { x: 0, y: 0 }
+
+        if (jointCreation.step === 'selectBodyA') {
+          selectJointBodyA(id, anchor)
+        } else if (jointCreation.step === 'selectBodyB') {
+          if (id !== jointCreation.bodyAId) {
+            selectJointBodyB(id, anchor)
+          }
+        }
+        return
+      }
+
+      selectBody(id)
+    },
+    [tool, jointCreation, scene.bodies, selectBody, selectJointBodyA, selectJointBodyB]
+  )
+
+  const handleBodyDragStart = useCallback(
+    (id: string) => {
+      // Check om body er i mekanisme — brug IK i stedet for direkte drag
+      if (isBodyInMechanism(id)) {
+        isDraggingMechanismRef.current = true
+        return true // signal at det er mechanism drag
+      }
+      return false
+    },
+    [isBodyInMechanism]
+  )
 
   const handleBodyDragEnd = useCallback(
     (id: string, newX: number, newY: number) => {
-      updateBody(id, { x: newX, y: newY })
+      if (!isDraggingMechanismRef.current) {
+        updateBody(id, { x: newX, y: newY })
+      }
+      isDraggingMechanismRef.current = false
     },
     [updateBody]
+  )
+
+  const handleJointSelect = useCallback(
+    (id: string) => {
+      selectJoint(id)
+    },
+    [selectJoint]
   )
 
   const cursorStyle = spaceDownRef.current || isPanningRef.current
     ? 'grabbing'
     : tool === 'addRect' || tool === 'addGround'
     ? 'crosshair'
+    : tool === 'addJoint'
+    ? 'pointer'
     : 'default'
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 bg-[#1a1a1a] overflow-hidden"
+      className="flex-1 bg-[#1a1a1a] overflow-hidden relative"
       style={{ cursor: cursorStyle }}
     >
+      {/* Joint creation overlay */}
+      {jointCreation && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-orange-600/90 text-white px-4 py-2 rounded-lg text-sm z-10 flex items-center gap-3">
+          {jointCreation.step === 'selectBodyA' && (
+            <span>Klik på første legeme/ground (A-side)</span>
+          )}
+          {jointCreation.step === 'selectBodyB' && (
+            <span>Klik på andet legeme (B-side)</span>
+          )}
+          <button
+            className="text-white/80 hover:text-white underline text-xs"
+            onClick={cancelJointCreation}
+          >
+            Annuller (Esc)
+          </button>
+        </div>
+      )}
+
       <Stage
         ref={stageRef}
         width={dimensions.width}
@@ -218,8 +348,24 @@ export default function SceneCanvas() {
               camera={scene.camera}
               isSelected={body.id === selectedBodyId}
               snapEnabled={scene.snapToGrid}
-              onSelect={selectBody}
+              onSelect={handleBodyClick}
               onDragEnd={handleBodyDragEnd}
+              onDragStart={handleBodyDragStart}
+              isInMechanism={isBodyInMechanism(body.id)}
+            />
+          ))}
+        </Layer>
+
+        {/* Joints Layer */}
+        <Layer>
+          {scene.joints.map((joint) => (
+            <JointMarker
+              key={joint.id}
+              joint={joint}
+              scene={scene}
+              camera={scene.camera}
+              isSelected={joint.id === selectedJointId}
+              onSelect={handleJointSelect}
             />
           ))}
         </Layer>
