@@ -97,9 +97,10 @@ export function solveFourBar(
   // Input angle relative to ground line
   const theta2 = degToRad(theta2Deg)
 
-  // Freudenstein constants
-  const K1 = r1 / r4
-  const K2 = r1 / r2
+  // Freudenstein constants (standard form: K1=d/a, K2=d/c, K3=(a²-b²+c²+d²)/(2ac))
+  // d=ground(r1), a=input(r2), b=coupler(r3), c=output(r4)
+  const K1 = r1 / r2
+  const K2 = r1 / r4
   const K3 = (r2 * r2 - r3 * r3 + r4 * r4 + r1 * r1) / (2 * r2 * r4)
 
   const A = Math.cos(theta2) - K1 - K2 * Math.cos(theta2) + K3
@@ -332,13 +333,10 @@ export function solveMechanism(
       const couplerAnchorLocal =
         couplerJoint.bodyAId === couplerBody.id ? couplerJoint.anchorOnA : couplerJoint.anchorOnB
 
-      // Coupler rotation: angle fra couplerAnchor til outputAnchor
+      // Coupler rotation: retning fra P2 til P3 i world-koordinater
       const couplerRotation = radToDeg(
         Math.atan2(result.P3.y - result.P2.y, result.P3.x - result.P2.x)
-      ) - radToDeg(Math.atan2(
-        fourBar.config.groundB.y - fourBar.config.groundA.y + 0.001,
-        fourBar.config.groundB.x - fourBar.config.groundA.x + 0.001
-      )) // approximate
+      )
 
       const rotatedCouplerAnchor = vecRotate(couplerAnchorLocal, couplerRotation)
       bodyUpdates.push({
