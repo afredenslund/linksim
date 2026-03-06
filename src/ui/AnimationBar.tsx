@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSceneStore } from '../store/sceneStore'
 import { solveMechanism } from '../engine/kinematics'
 
@@ -11,18 +11,95 @@ export default function AnimationBar() {
   const [isPlaying, setIsPlaying] = useState(false)
   const animRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
+  const angleRef = useRef<number>(driverJoint?.currentAngle ?? 0)
 
   const minAngle = driverJoint?.minAngle ?? -180
   const maxAngle = driverJoint?.maxAngle ?? 180
   const currentAngle = driverJoint?.currentAngle ?? 0
 
+  // Hold angleRef synkroniseret med den rigtige currentAngle
+  // (men kun når vi IKKE animerer — ellers styrer animationen)
+  useEffect(() => {
+    if (!isPlaying) {
+      angleRef.current = currentAngle
+    }
+  }, [currentAngle, isPlaying])
+
+  // Refs for stabile værdier i animation loop
+  const sceneRef = useRef(scene)
+  const driverJointRef = useRef(driverJoint)
+  const updateJointRef = useRef(updateJoint)
+  const updateBodyRef = useRef(updateBody)
+  const minAngleRef = useRef(minAngle)
+  const maxAngleRef = useRef(maxAngle)
+
+  useEffect(() => { sceneRef.current = scene }, [scene])
+  useEffect(() => { driverJointRef.current = driverJoint }, [driverJoint])
+  useEffect(() => { updateJointRef.current = updateJoint }, [updateJoint])
+  useEffect(() => { updateBodyRef.current = updateBody }, [updateBody])
+  useEffect(() => { minAngleRef.current = minAngle }, [minAngle])
+  useEffect(() => { maxAngleRef.current = maxAngle }, [maxAngle])
+
+  // Animation loop — afhænger KUN af isPlaying
+  useEffect(() => {
+    if (!isPlaying || !driverJointRef.current) return
+
+    const speed = 45 // grader per sekund
+
+    const animate = (time: number) => {
+      if (lastTimeRef.current === 0) {
+        lastTimeRef.current = time
+        animRef.current = requestAnimationFrame(animate)
+        return // spring første frame over (dt ville være 0)
+      }
+
+      const dt = (time - lastTimeRef.current) / 1000
+      lastTimeRef.current = time
+
+      let newAngle = angleRef.current + speed * dt
+      if (newAngle > maxAngleRef.current) {
+        newAngle = minAngleRef.current
+      }
+      angleRef.current = newAngle
+
+      // Opdater joint
+      const dj = driverJointRef.current
+      if (!dj) return
+
+      updateJointRef.current(dj.id, { currentAngle: newAngle })
+
+      // Solve mechanism med opdateret scene
+      const currentScene = sceneRef.current
+      const updatedScene = {
+        ...currentScene,
+        joints: currentScene.joints.map((j) =>
+          j.id === dj.id ? { ...j, currentAngle: newAngle } : j
+        ),
+      }
+      const solution = solveMechanism(updatedScene, newAngle)
+      if (solution.valid) {
+        for (const bu of solution.bodyUpdates) {
+          updateBodyRef.current(bu.id, { x: bu.x, y: bu.y, rotation: bu.rotation })
+        }
+      }
+
+      animRef.current = requestAnimationFrame(animate)
+    }
+
+    lastTimeRef.current = 0
+    animRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      cancelAnimationFrame(animRef.current)
+    }
+  }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const applyDriverAngle = useCallback(
     (angle: number) => {
       if (!driverJoint) return
-
+      angleRef.current = angle
       updateJoint(driverJoint.id, { currentAngle: angle })
 
-      // Solve mechanism
       const updatedScene = {
         ...scene,
         joints: scene.joints.map((j) =>
@@ -30,7 +107,6 @@ export default function AnimationBar() {
         ),
       }
       const solution = solveMechanism(updatedScene, angle)
-
       if (solution.valid) {
         for (const bu of solution.bodyUpdates) {
           updateBody(bu.id, { x: bu.x, y: bu.y, rotation: bu.rotation })
@@ -47,34 +123,6 @@ export default function AnimationBar() {
     },
     [applyDriverAngle]
   )
-
-  // Animation loop
-  useEffect(() => {
-    if (!isPlaying || !driverJoint) return
-
-    const speed = 30 // grader per sekund
-    const animate = (time: number) => {
-      if (lastTimeRef.current === 0) lastTimeRef.current = time
-      const dt = (time - lastTimeRef.current) / 1000
-      lastTimeRef.current = time
-
-      const newAngle = currentAngle + speed * dt
-      if (newAngle > maxAngle) {
-        applyDriverAngle(minAngle)
-      } else {
-        applyDriverAngle(newAngle)
-      }
-
-      animRef.current = requestAnimationFrame(animate)
-    }
-
-    lastTimeRef.current = 0
-    animRef.current = requestAnimationFrame(animate)
-
-    return () => {
-      cancelAnimationFrame(animRef.current)
-    }
-  }, [isPlaying, driverJoint, currentAngle, minAngle, maxAngle, applyDriverAngle])
 
   if (!driverJoint) {
     return (

@@ -234,13 +234,50 @@ export default function SceneCanvas() {
         const body = scene.bodies.find((b) => b.id === id)
         if (!body) return
 
-        // Brug body center som anchor punkt
-        const anchor = { x: 0, y: 0 }
-
+        // Beregn anchor som nærmeste kant-punkt til ground-anchor
+        // For A-side: brug body center
+        // For B-side: beregn nærmeste kant mod A-anchor
         if (jointCreation.step === 'selectBodyA') {
-          selectJointBodyA(id, anchor)
+          selectJointBodyA(id, { x: 0, y: 0 })
         } else if (jointCreation.step === 'selectBodyB') {
           if (id !== jointCreation.bodyAId) {
+            // Find det nærmeste hjørne/kantpunkt til ground-ankeret
+            let anchor = { x: 0, y: 0 }
+            if (jointCreation.anchorOnA && body.vertices.length > 0) {
+              const groundWorld = jointCreation.anchorOnA
+              // Simpel: brug nærmeste vertex i body-lokale coords
+              let bestDist = Infinity
+              for (const v of body.vertices) {
+                // Approx: find vertex nærmest ground anchor i world
+                const rad = (body.rotation * Math.PI) / 180
+                const wx = body.x + v.x * Math.cos(rad) - v.y * Math.sin(rad)
+                const wy = body.y + v.x * Math.sin(rad) + v.y * Math.cos(rad)
+                const dist = Math.sqrt((wx - groundWorld.x) ** 2 + (wy - groundWorld.y) ** 2)
+                if (dist < bestDist) {
+                  bestDist = dist
+                  anchor = { x: v.x, y: v.y }
+                }
+              }
+              // Brug også kantmidter (venstre, højre, top, bund)
+              if (body.width && body.height) {
+                const edgeMids = [
+                  { x: -(body.width / 2), y: 0 },  // venstre
+                  { x: body.width / 2, y: 0 },      // højre
+                  { x: 0, y: -(body.height / 2) },   // bund
+                  { x: 0, y: body.height / 2 },      // top
+                ]
+                for (const em of edgeMids) {
+                  const rad = (body.rotation * Math.PI) / 180
+                  const wx = body.x + em.x * Math.cos(rad) - em.y * Math.sin(rad)
+                  const wy = body.y + em.x * Math.sin(rad) + em.y * Math.cos(rad)
+                  const dist = Math.sqrt((wx - groundWorld.x) ** 2 + (wy - groundWorld.y) ** 2)
+                  if (dist < bestDist) {
+                    bestDist = dist
+                    anchor = { x: em.x, y: em.y }
+                  }
+                }
+              }
+            }
             selectJointBodyB(id, anchor)
           }
         }
