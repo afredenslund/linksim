@@ -83,7 +83,7 @@ export default function JointPanel({ joint, scene }: JointPanelProps) {
               type="number"
               className={numInputClass}
               value={Math.round(joint.anchorOnA.x * 10) / 10}
-              onChange={(e) => handleUpdate('anchorOnA', { ...joint.anchorOnA, x: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => updateJoint(joint.id, { anchorOnA: { ...joint.anchorOnA, x: parseFloat(e.target.value) || 0 } })}
               step={5}
             />
           </div>
@@ -93,7 +93,7 @@ export default function JointPanel({ joint, scene }: JointPanelProps) {
               type="number"
               className={numInputClass}
               value={Math.round(joint.anchorOnA.y * 10) / 10}
-              onChange={(e) => handleUpdate('anchorOnA', { ...joint.anchorOnA, y: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => updateJoint(joint.id, { anchorOnA: { ...joint.anchorOnA, y: parseFloat(e.target.value) || 0 } })}
               step={5}
             />
           </div>
@@ -108,7 +108,7 @@ export default function JointPanel({ joint, scene }: JointPanelProps) {
               type="number"
               className={numInputClass}
               value={Math.round(joint.anchorOnB.x * 10) / 10}
-              onChange={(e) => handleUpdate('anchorOnB', { ...joint.anchorOnB, x: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => updateJoint(joint.id, { anchorOnB: { ...joint.anchorOnB, x: parseFloat(e.target.value) || 0 } })}
               step={5}
             />
           </div>
@@ -118,7 +118,7 @@ export default function JointPanel({ joint, scene }: JointPanelProps) {
               type="number"
               className={numInputClass}
               value={Math.round(joint.anchorOnB.y * 10) / 10}
-              onChange={(e) => handleUpdate('anchorOnB', { ...joint.anchorOnB, y: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => updateJoint(joint.id, { anchorOnB: { ...joint.anchorOnB, y: parseFloat(e.target.value) || 0 } })}
               step={5}
             />
           </div>
