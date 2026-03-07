@@ -136,6 +136,50 @@ export function aabbOverlap(a: AABB, b: AABB): boolean {
   return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
 }
 
+// === World-to-body-local konvertering ===
+
+/** Konverter et world-space punkt til body-lokale koordinater */
+export function worldToBodyLocal(worldPos: Vector2, body: Body): Vector2 {
+  // Fjern body-translation, derefter invers rotation
+  const dx = worldPos.x - body.x
+  const dy = worldPos.y - body.y
+  return vecRotate({ x: dx, y: dy }, -body.rotation)
+}
+
+/**
+ * Snap et body-lokalt punkt til nærmeste "snap target" (hjørne, kantmidtpunkt, center)
+ * Returnerer snappet punkt hvis inden for threshold, ellers det originale punkt.
+ */
+export function snapAnchorToBody(localPos: Vector2, body: Body, thresholdMm: number): Vector2 {
+  const candidates: Vector2[] = [
+    { x: 0, y: 0 }, // center
+    ...body.vertices,  // hjørner
+  ]
+
+  // Kantmidtpunkter for rektangler
+  if (body.width && body.height) {
+    candidates.push(
+      { x: -(body.width / 2), y: 0 },  // venstre midt
+      { x: body.width / 2, y: 0 },      // højre midt
+      { x: 0, y: -(body.height / 2) },   // bund midt
+      { x: 0, y: body.height / 2 },      // top midt
+    )
+  }
+
+  let bestCandidate = localPos
+  let bestDist = thresholdMm
+
+  for (const c of candidates) {
+    const dist = vecDist(localPos, c)
+    if (dist < bestDist) {
+      bestDist = dist
+      bestCandidate = c
+    }
+  }
+
+  return bestCandidate
+}
+
 // === ID-generator ===
 
 export function generateId(): string {

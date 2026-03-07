@@ -73,6 +73,58 @@ export default function JointPanel({ joint, scene }: JointPanelProps) {
         </div>
       </div>
 
+      {/* Anchor-positioner */}
+      <div>
+        <label className={labelClass}>Anker på A (lokale mm)</label>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <div>
+            <span className="text-xs text-gray-600">X</span>
+            <input
+              type="number"
+              className={numInputClass}
+              value={Math.round(joint.anchorOnA.x * 10) / 10}
+              onChange={(e) => handleUpdate('anchorOnA', { ...joint.anchorOnA, x: parseFloat(e.target.value) || 0 })}
+              step={5}
+            />
+          </div>
+          <div>
+            <span className="text-xs text-gray-600">Y</span>
+            <input
+              type="number"
+              className={numInputClass}
+              value={Math.round(joint.anchorOnA.y * 10) / 10}
+              onChange={(e) => handleUpdate('anchorOnA', { ...joint.anchorOnA, y: parseFloat(e.target.value) || 0 })}
+              step={5}
+            />
+          </div>
+        </div>
+      </div>
+      <div>
+        <label className={labelClass}>Anker på B (lokale mm)</label>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <div>
+            <span className="text-xs text-gray-600">X</span>
+            <input
+              type="number"
+              className={numInputClass}
+              value={Math.round(joint.anchorOnB.x * 10) / 10}
+              onChange={(e) => handleUpdate('anchorOnB', { ...joint.anchorOnB, x: parseFloat(e.target.value) || 0 })}
+              step={5}
+            />
+          </div>
+          <div>
+            <span className="text-xs text-gray-600">Y</span>
+            <input
+              type="number"
+              className={numInputClass}
+              value={Math.round(joint.anchorOnB.y * 10) / 10}
+              onChange={(e) => handleUpdate('anchorOnB', { ...joint.anchorOnB, y: parseFloat(e.target.value) || 0 })}
+              step={5}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Driver toggle */}
       <div className="flex items-center gap-2">
         <input

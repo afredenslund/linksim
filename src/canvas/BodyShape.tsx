@@ -10,7 +10,7 @@ interface BodyShapeProps {
   isSelected: boolean
   snapEnabled: boolean
   isInMechanism: boolean
-  onSelect: (id: string) => void
+  onSelect: (id: string, screenPos?: { x: number; y: number }) => void
   onDragEnd: (id: string, newX: number, newY: number) => void
   onDragStart?: (id: string) => boolean // return true if mechanism drag
 }
@@ -42,7 +42,10 @@ export default function BodyShape({
   const handleClick = useCallback(
     (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
       e.cancelBubble = true
-      onSelect(body.id)
+      // Hent klik-position fra stage (screen-koordinater)
+      const stage = e.target.getStage()
+      const pointer = stage?.getPointerPosition()
+      onSelect(body.id, pointer ?? undefined)
     },
     [body.id, onSelect]
   )
